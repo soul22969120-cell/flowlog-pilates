@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: flowlog-pilates
+    runtime: python
+    buildCommand: python3 -m py_compile server.py
+    startCommand: python3 server.py
+    healthCheckPath: /api/health
