@@ -14,6 +14,8 @@ DB_PATH = Path(os.environ.get("FLOWLOG_DB_PATH", ROOT / "pilates.sqlite3"))
 PORT = int(os.environ.get("PORT", "4173"))
 OPEN_TIMES = {"09:00", "10:00", "11:00", "14:00", "15:00", "16:00", "17:00", "19:00"}
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+if SUPABASE_URL.endswith("/rest/v1"):
+    SUPABASE_URL = SUPABASE_URL[:-7]
 SUPABASE_KEY = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
 
