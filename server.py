@@ -40,10 +40,12 @@ def supabase_request(method, path, payload=None, query=None):
             raw = response.read()
             return json.loads(raw) if raw else []
     except HTTPError as error:
+        print(f"Supabase HTTP error: {error.code} {error.reason}")
         if error.code in (409, 412):
             raise sqlite3.IntegrityError from error
         raise RuntimeError from error
     except (URLError, TimeoutError) as error:
+        print(f"Supabase connection error: {error}")
         raise RuntimeError from error
 
 
@@ -106,6 +108,7 @@ class Handler(BaseHTTPRequestHandler):
                         "order": "booking_date.asc,booking_time.asc",
                     })
                 except RuntimeError:
+                    print("Supabase booking list request failed")
                     return self.send_json({"error": "資料庫連線失敗，請稍後再試"}, 503)
                 today = date.today()
                 rows = [row for row in rows if date.fromisoformat(row["booking_date"]) >= today]
@@ -141,6 +144,7 @@ class Handler(BaseHTTPRequestHandler):
         except sqlite3.IntegrityError:
             return self.send_json({"error": "這個時段剛剛已被預約"}, 409)
         except RuntimeError:
+            print("Supabase booking insert failed")
             return self.send_json({"error": "資料庫連線失敗，請稍後再試"}, 503)
         except (KeyError, ValueError, TypeError):
             return self.send_json({"error": "請確認日期、時間與姓名"}, 400)
@@ -157,6 +161,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 supabase_request("DELETE", "bookings", query={"id": f"eq.{booking_id}"})
             except RuntimeError:
+                print("Supabase booking delete failed")
                 return self.send_json({"error": "資料庫連線失敗，請稍後再試"}, 503)
             return self.send_json({"ok": True})
         with db() as conn:
