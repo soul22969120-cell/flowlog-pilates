@@ -1,6 +1,9 @@
 import json
 import os
 import sqlite3
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -10,6 +13,36 @@ ROOT = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("FLOWLOG_DB_PATH", ROOT / "pilates.sqlite3"))
 PORT = int(os.environ.get("PORT", "4173"))
 OPEN_TIMES = {"09:00", "10:00", "11:00", "14:00", "15:00", "16:00", "17:00", "19:00"}
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+
+
+def using_supabase():
+    return bool(SUPABASE_URL and SUPABASE_KEY)
+
+
+def supabase_request(method, path, payload=None, query=None):
+    url = f"{SUPABASE_URL}/rest/v1/{path}"
+    if query:
+        url += "?" + urlencode(query)
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+    raw_body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    request = Request(url, data=raw_body, headers=headers, method=method)
+    try:
+        with urlopen(request, timeout=15) as response:
+            raw = response.read()
+            return json.loads(raw) if raw else []
+    except HTTPError as error:
+        if error.code in (409, 412):
+            raise sqlite3.IntegrityError from error
+        raise RuntimeError from error
+    except (URLError, TimeoutError) as error:
+        raise RuntimeError from error
 
 
 def db():
@@ -64,6 +97,17 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/health":
             return self.send_json({"ok": True})
         if path == "/api/bookings":
+            if using_supabase():
+                try:
+                    rows = supabase_request("GET", "bookings", query={
+                        "select": "*",
+                        "order": "booking_date.asc,booking_time.asc",
+                    })
+                except RuntimeError:
+                    return self.send_json({"error": "資料庫連線失敗，請稍後再試"}, 503)
+                today = date.today()
+                rows = [row for row in rows if date.fromisoformat(row["booking_date"]) >= today]
+                return self.send_json([booking_json(row) for row in rows])
             with db() as conn:
                 rows = conn.execute("SELECT * FROM bookings WHERE booking_date >= date('now') ORDER BY booking_date, booking_time").fetchall()
             return self.send_json([booking_json(row) for row in rows])
@@ -81,12 +125,21 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError
             if not 0 <= (target - date.today()).days <= 90:
                 return self.send_json({"error": "目前只開放未來 90 天"}, 400)
+            if using_supabase():
+                rows = supabase_request("POST", "bookings", {
+                    "booking_date": target.isoformat(),
+                    "booking_time": booking_time,
+                    "name": name,
+                })
+                return self.send_json(booking_json(rows[0]), 201)
             with db() as conn:
                 cur = conn.execute("INSERT INTO bookings (booking_date, booking_time, name) VALUES (?, ?, ?)", (target.isoformat(), booking_time, name))
                 row = conn.execute("SELECT * FROM bookings WHERE id = ?", (cur.lastrowid,)).fetchone()
             return self.send_json(booking_json(row), 201)
         except sqlite3.IntegrityError:
             return self.send_json({"error": "這個時段剛剛已被預約"}, 409)
+        except RuntimeError:
+            return self.send_json({"error": "資料庫連線失敗，請稍後再試"}, 503)
         except (KeyError, ValueError, TypeError):
             return self.send_json({"error": "請確認日期、時間與姓名"}, 400)
 
@@ -98,6 +151,12 @@ class Handler(BaseHTTPRequestHandler):
             booking_id = int(parts[3])
         except ValueError:
             return self.send_json({"error": "預約編號無效"}, 400)
+        if using_supabase():
+            try:
+                supabase_request("DELETE", "bookings", query={"id": f"eq.{booking_id}"})
+            except RuntimeError:
+                return self.send_json({"error": "資料庫連線失敗，請稍後再試"}, 503)
+            return self.send_json({"ok": True})
         with db() as conn:
             conn.execute("DELETE FROM bookings WHERE id = ?", (booking_id,))
         return self.send_json({"ok": True})
