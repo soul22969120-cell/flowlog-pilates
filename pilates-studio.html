@@ -10,8 +10,74 @@ const names=['日','一','二','三','四','五','六'],times=['09:00','10:00','
 // 線上預約只需要姓名與生日；生日可輸入 0827 或 08/27。
 const bookingForm=el('bookingForm');
 if(bookingForm){
-  bookingForm.innerHTML='<label>你的姓名<input name="name" required placeholder="姓名"></label><label>生日月／日<input name="birthday_mmdd" required inputmode="numeric" maxlength="5" placeholder="例如 0827"></label><div class="actions"><button class="secondary" type="button" id="closeModal">返回</button><button class="primary" type="submit">確認預約</button></div>';
+  bookingForm.innerHTML='<div class="actions"><button class="secondary" type="button" id="closeModal">返回</button><button class="primary" type="submit">確認預約</button></div>';
   el('closeModal').onclick=()=>el('modal').classList.remove('open');
+}
+</script>
+<style>
+  /* 學生頁面只保留日曆與預約操作，登入按鈕會由確認視窗顯示。 */
+  .student > .hero { display: none !important; }
+</style>
+<style>
+/* 確認視窗的按鈕保持可點擊，避免被背景遮罩攔截 */
+.modal-back.open,
+.modal-back.open .modal,
+.modal-back.open .modal * { pointer-events: auto; }
+.modal-back.open button { position: relative; z-index: 1002; cursor: pointer; }
+</style>
+<script>
+/* 本機預覽的最後一道按鈕保護；正式網站仍交給 LINE OAuth。 */
+if (location.protocol === 'file:') {
+  document.addEventListener('click', function (event) {
+    const button = event.target.closest && event.target.closest('#loginBtn, #closeModal');
+    if (!button) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (button.id === 'closeModal') {
+      el('modal').classList.remove('open');
+      return;
+    }
+    window.FLOWLOG_TEST_LOGGED = true;
+    window.FLOWLOG_LINE_NAME = '謝守';
+    button.type = 'button';
+    button.classList.add('logged');
+    button.textContent = '✓ LINE 已登入（測試）';
+    const form = el('bookingForm');
+    if (form) {
+      form.querySelectorAll('label').forEach(node => node.remove());
+      form.querySelectorAll('input[type="hidden"][name="name"]').forEach(node => node.remove());
+      const name = document.createElement('input');
+      name.type = 'hidden'; name.name = 'name'; name.value = '謝守';
+      form.prepend(name);
+    }
+    toast('本機測試：已帶入 LINE 姓名');
+  }, true);
+}
+</script>
+<style>#loginBtn{position:relative;z-index:20;pointer-events:auto}</style>
+<style>.modal-back.open{z-index:1000;pointer-events:auto}.modal-back.open .modal{position:relative;z-index:1001;pointer-events:auto}.modal-back.open button{position:relative;z-index:1002;pointer-events:auto;cursor:pointer}</style>
+<script>
+// 最後一道本機測試保護：即使前面的事件被覆蓋，點擊仍由文件層接手處理。
+if(location.protocol==='file:'){
+  document.addEventListener('click',event=>{
+    const button=event.target.closest?.('#loginBtn');
+    if(!button)return;
+    event.preventDefault();
+    event.stopPropagation();
+    window.FLOWLOG_TEST_LOGGED=true;
+    window.FLOWLOG_LINE_NAME='謝守';
+    button.type='button';
+    button.classList.add('logged');
+    button.textContent='✓ LINE 已登入（測試）';
+    const form=el('bookingForm');
+    if(form){
+      form.querySelectorAll('label').forEach(node=>node.remove());
+      form.querySelectorAll('input[type="hidden"][name="name"],input[type="hidden"][name="birthday_mmdd"]').forEach(node=>node.remove());
+      const nameInput=document.createElement('input');nameInput.type='hidden';nameInput.name='name';nameInput.value='謝守';form.prepend(nameInput);
+      const birthdayInput=document.createElement('input');birthdayInput.type='hidden';birthdayInput.name='birthday_mmdd';birthdayInput.value='01/01';form.prepend(birthdayInput);
+    }
+    toast('本機測試：已帶入 LINE 姓名');
+  },true);
 }
 </script>
 <script>(async()=>{if(!location.protocol.startsWith('http'))return;const flowApi='/api/bookings';renderUpcoming=()=>{};renderSummary=()=>{};el('bookingForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);try{const r=await fetch(flowApi,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:dayKey(dateAt(pending.offset)),time:pending.time,name:f.get('name')})});const data=await r.json();if(!r.ok)throw new Error(data.error||'預約失敗');bookings.push(data);el('modal').classList.remove('open');e.target.reset();render();toast('預約成功！時段已為你鎖定')}catch(err){toast(err.message)}};const flowRender=render;render=()=>{flowRender();renderFlowSummary()};function renderFlowSummary(){const list=bookings.slice().sort((a,b)=>a.offset-b.offset||a.time.localeCompare(b.time));let box=document.querySelector('.booking-summary');if(!box){box=document.createElement('section');box.className='booking-summary';box.innerHTML='<h3>我的預約</h3><div id="summaryList"></div>';document.querySelector('.student .hint').after(box)}document.getElementById('summaryList').innerHTML=list.length?list.map(b=>`<div class="booking"><div class="calendar-icon">${dateAt(b.offset).getDate()}</div><div class="booking-main"><strong>${fmt(dateAt(b.offset))} · ${b.time}</strong><small>${b.name} · 皮拉提斯一對一</small></div><button class="cancel" data-api-cancel="${b.id}">取消</button></div>`).join(''):'<div class="empty">目前還沒有預約</div>';document.querySelectorAll('[data-api-cancel]').forEach(x=>x.onclick=async()=>{const r=await fetch(`${flowApi}/${x.dataset.apiCancel}`,{method:'DELETE'});if(r.ok){bookings=bookings.filter(b=>b.id!==+x.dataset.apiCancel);render();toast('預約已取消，時段重新開放')}else toast('取消預約失敗')})}try{const r=await fetch(flowApi);if(r.ok){bookings=await r.json();seed={};render()}}catch(err){toast('目前無法連線到預約服務')}})();</script>
@@ -21,7 +87,6 @@ if(bookingForm){
 <style>.mode,#adminView{display:none!important}.student{display:block}</style>
 <style>.student .grid{display:block}.student .grid>aside{display:none}</style>
 <script>document.querySelector('[name="name"]')?.removeAttribute('placeholder');document.querySelector('[name="phone"]')?.removeAttribute('placeholder')</script>
-<script>document.querySelector('[name="phone"]')?.closest('label')?.remove()</script>
 <style>.mark{position:relative;width:42px;height:42px;border-radius:50%;background:radial-gradient(circle at center,#f3c85b 0 18%,transparent 19%),radial-gradient(ellipse at 50% 7%,#fff 0 20%,transparent 21%),radial-gradient(ellipse at 93% 50%,#fff 0 20%,transparent 21%),radial-gradient(ellipse at 50% 93%,#fff 0 20%,transparent 21%),radial-gradient(ellipse at 7% 50%,#fff 0 20%,transparent 21%),#28665b;transform:none;font-size:0;box-shadow:0 5px 12px rgba(40,102,91,.16)}.mark:after{content:'GD';position:absolute;inset:0;display:grid;place-items:center;color:#28665b;font-size:8px;font-weight:900;letter-spacing:-.05em}</style>
 <style>.mark{background:url('daisy-logo.png') center/contain no-repeat;box-shadow:none;border-radius:0}.mark:after{display:none}</style>
 <style>.mark{background:none;color:#263532;font-size:0;display:grid;place-items:center}.mark:before{content:'❀';font-size:37px;line-height:1;font-family:Georgia,'Times New Roman',serif;transform:translateY(-1px)}.mark:after{display:none}</style>
@@ -31,11 +96,281 @@ if(bookingForm){
 <script src="supabase-pages.js"></script>
 <script src="confirmation-pages.js"></script>
 <script src="availability-pages.js"></script>
+<script>
+// 本機預覽：記住測試用的 LINE 學生，讓老師後台可以直接選取。
+if(location.protocol==='file:')document.getElementById('loginBtn')?.addEventListener('click',()=>{
+  if(!window.FLOWLOG_TEST_LOGGED)return;
+  const list=JSON.parse(localStorage.getItem('flowlog-known-students')||'[]').filter(row=>row.user_id!=='local-test');
+  list.push({user_id:'local-test',name:'謝守'});
+  localStorage.setItem('flowlog-known-students',JSON.stringify(list));
+});
+</script>
 <script>document.querySelector('.student aside .sub')?.remove()</script>
 <script>(function(){const clean=()=>{const w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);let n;while(n=w.nextNode())if(n.nodeValue.includes('皮拉提斯一對一'))n.nodeValue=n.nodeValue.replaceAll('皮拉提斯一對一','').replace(/\s+·\s*$/,'')};clean();new MutationObserver(clean).observe(document.body,{childList:true,subtree:true})})()</script>
-<style>.manage-box{margin-top:18px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#f8fbf9}.manage-box summary{cursor:pointer;font-weight:800;color:var(--deep);font-size:13px}.manage-content{padding-top:10px}.manage-box p{margin:0 0 10px;color:var(--muted);font-size:12px}.manage-box .manage-content>div{display:flex;align-items:center;gap:7px}.manage-box input{min-width:0;flex:1;border:1px solid var(--line);border-radius:9px;padding:10px}.manage-box .secondary{padding:9px 12px}.manage-box #manageResult{display:grid;gap:8px;margin-top:10px;font-size:12px;color:var(--muted)}.manage-box #manageResult>div{display:flex;align-items:center;justify-content:space-between;gap:8px}.manage-box #manageResult .cancel{margin-left:8px;white-space:nowrap}.booking-summary{display:none!important}@media(max-width:760px){.grid{display:flex;flex-direction:column}.grid>aside{order:1}.grid>section{order:2}.manage-box .manage-content>div{flex-wrap:wrap}.manage-box input{min-height:44px}.manage-box .secondary{min-height:44px;padding:10px 16px}.booking{gap:9px}.booking-main strong{font-size:13px}.cancel{padding:10px 4px;font-size:12px}}</style>
+<style>.manage-box{margin-top:18px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#f8fbf9}.manage-box summary{cursor:pointer;font-weight:800;color:var(--deep);font-size:13px}.manage-content{padding-top:10px}.manage-box p{margin:0 0 10px;color:var(--muted);font-size:12px}.manage-box .manage-content>div{display:flex;align-items:center;gap:7px}.manage-box input{min-width:0;flex:1;border:1px solid var(--line);border-radius:9px;padding:10px}.manage-box .secondary{padding:9px 12px}.manage-box #manageResult{display:grid;gap:8px;margin-top:10px;font-size:12px;color:var(--muted)}.manage-box #manageResult>div{display:flex;align-items:center;justify-content:space-between;gap:8px}.manage-box #manageResult .cancel{margin-left:8px;white-space:nowrap}.booking-summary{display:block!important}@media(max-width:760px){.grid{display:flex;flex-direction:column}.grid>aside{order:1}.grid>section{order:2}.manage-box .manage-content>div{flex-wrap:wrap}.manage-box input{min-height:44px}.manage-box .secondary{min-height:44px;padding:10px 16px}.booking{gap:9px}.booking-main strong{font-size:13px}.cancel{padding:10px 4px;font-size:12px}}</style>
 <style>.calendar-icon{background:none!important;color:#263532;font-size:0!important}.calendar-icon::before{content:'•';font-size:30px;font-weight:900;line-height:1}</style>
 <style>:root{--ink:#111;--muted:#707070;--line:#dedede;--bg:#fff;--deep:#111;--sage:#f1f1f1;--panel:#fff;--coral:#555}body{background:#fff;color:#111}.top{background:#fff;border-color:#ddd}.brand small,.hero p,.sub,.slot small,.side-card,.empty,.hint,.form label{color:#707070}.mark{color:#111}.mode{background:#f1f1f1}.mode button.active{color:#111}.login,.month button,.date,.slot,.secondary{background:#fff;color:#111;border-color:#d5d5d5}.login.logged,.date.selected,.primary{background:#111;color:#fff;border-color:#111}.panel{background:#fff;border-color:#ddd;box-shadow:0 12px 30px rgba(0,0,0,.05)}.date:hover,.slot:hover{border-color:#111;background:#f7f7f7}.date.selected small{background:#fff;color:#111}.date small{background:#f1f1f1;color:#555}.date.disabled small{background:transparent;color:#aaa}.slot{background:#fff;border-color:#cfcfcf}.slot.booked{background:#f4f4f4;border-color:#e5e5e5;color:#999}.hint,.side-card,.block-item,.manage-box,.booking-summary{background:#fafafa;border-color:#e1e1e1}.calendar-icon{color:#111}.cancel{color:#555}.tag{background:#f1f1f1;color:#111}.toast{background:#111;color:#fff}.modal-back{background:rgba(0,0,0,.45)}.modal{background:#fff}.form input,.manage-box input{background:#fff;color:#111;border-color:#ccc}.manage-box summary{color:#111}.manage-box #manageResult{color:#555}</style>
 <style>.hint{background:transparent;border:0;color:#641f1f;font-weight:600;padding-left:0;padding-right:0}</style>
 <style>.hint{display:flex;align-items:flex-start;gap:8px}.bell-icon{position:relative;display:inline-block;flex:0 0 15px;width:15px;height:14px;margin-top:3px;border:2px solid #641f1f;border-top-left-radius:8px;border-top-right-radius:8px;border-bottom:0}.bell-icon:before{content:'';position:absolute;left:-4px;right:-4px;bottom:-2px;border-bottom:2px solid #641f1f;border-radius:50%}.bell-icon:after{content:'';position:absolute;width:4px;height:3px;left:4px;bottom:-6px;background:#641f1f;border-radius:50%}</style>
+<style>.login{background:#06c755!important;border-color:#06c755!important;color:#fff!important}.login.logged{background:#06a94a!important;border-color:#06a94a!important;color:#fff!important}</style>
 <script>const hint=document.querySelector('.hint');if(hint)hint.innerHTML=hint.innerHTML.replace('小提醒：','<span class="bell-icon" aria-label="小提醒"></span>');</script>
+<script>
+// 本機預覽用：模擬 LINE 登入，正式 HTTPS 會由 Supabase 處理。
+if(location.protocol==='file:'){
+  const testLogin=el('loginBtn'),testForm=el('bookingForm');
+  let testLogged=window.FLOWLOG_TEST_LOGGED||false;
+  if(testLogin&&testForm)testLogin.onclick=()=>{
+    testLogged=!testLogged;
+    window.FLOWLOG_TEST_LOGGED=testLogged;
+    testLogin.classList.toggle('logged',testLogged);
+    testLogin.textContent=testLogged?'✓ LINE 已登入（測試）':'◉ 使用 LINE 登入';
+    if(testLogged){
+      window.FLOWLOG_LINE_NAME='謝守';
+      testForm.querySelectorAll('label').forEach(x=>x.remove());
+      const hidden=document.createElement('input');hidden.type='hidden';hidden.name='name';hidden.value='謝守';testForm.prepend(hidden);
+      const hiddenBirthday=document.createElement('input');hiddenBirthday.type='hidden';hiddenBirthday.name='birthday_mmdd';hiddenBirthday.value='01/01';testForm.prepend(hiddenBirthday);
+      toast('本機測試：已帶入 LINE 姓名');
+    }
+  };
+  if(testForm)testForm.addEventListener('submit',e=>{if(!window.FLOWLOG_TEST_LOGGED){e.preventDefault();e.stopImmediatePropagation();toast('請先使用 LINE 登入')}},true);
+}
+</script>
+<script>
+// 讓客人在選好時段後，再於確認視窗選擇 LINE 登入。
+const bookingModal=el('modal'),bookingLogin=el('loginBtn'),bookingModalForm=el('bookingForm');
+if(bookingModal&&bookingLogin&&bookingModalForm){
+  const note=document.createElement('p');
+  note.className='login-choice-note';
+  note.textContent='想快速預約並查看自己的預約？';
+  bookingModalForm.before(note,bookingLogin);
+  bookingModalForm.before(bookingLogin);
+  bookingLogin.textContent='使用 LINE 登入';
+  bookingLogin.style.margin='0 0 14px';
+  if(location.protocol==='file:'){
+    bookingLogin.onclick=()=>{
+      window.FLOWLOG_TEST_LOGGED=true;
+      bookingLogin.classList.add('logged');
+      bookingLogin.textContent='✓ LINE 已登入（測試）';
+      window.FLOWLOG_LINE_NAME='謝守';
+      const hidden=document.createElement('input');hidden.type='hidden';hidden.name='name';hidden.value='謝守';bookingModalForm.prepend(hidden);
+      const hiddenBirthday=document.createElement('input');hiddenBirthday.type='hidden';hiddenBirthday.name='birthday_mmdd';hiddenBirthday.value='01/01';bookingModalForm.prepend(hiddenBirthday);
+      toast('本機測試：已帶入 LINE 姓名');
+    };
+  }
+  const nameNote=document.createElement('div');
+  nameNote.className='line-name-note';
+  nameNote.textContent=window.FLOWLOG_LINE_NAME?`預約人：${window.FLOWLOG_LINE_NAME}`:'';
+  bookingModalForm.before(nameNote);
+  const refreshLineName=()=>{
+    if(!window.FLOWLOG_LINE_NAME)return;
+    const nextName=`預約人：${window.FLOWLOG_LINE_NAME}`;
+    if(nameNote.textContent!==nextName)nameNote.textContent=nextName;
+    if(!nameNote.classList.contains('visible'))nameNote.classList.add('visible');
+  };
+  refreshLineName();
+  new MutationObserver(refreshLineName).observe(bookingModal,{childList:true,subtree:true});
+}
+</script>
+<style>.login-choice-note{margin:0 0 8px;color:#707070;font-size:13px}.line-name-note{display:none;margin:0 0 12px;color:#111;font-weight:700;font-size:15px}.line-name-note.visible{display:block}</style>
+<script>
+// 本機測試：確認視窗中的 LINE 按鈕必須是獨立按鈕，不能誤觸發表單送出。
+if(location.protocol==='file:'){
+  const localLineButton=el('loginBtn'),localBookingForm=el('bookingForm');
+  if(localLineButton&&localBookingForm){
+    localLineButton.type='button';
+    localLineButton.onclick=null;
+    localLineButton.addEventListener('click',()=>{
+      window.FLOWLOG_TEST_LOGGED=true;
+      window.FLOWLOG_LINE_NAME='謝守';
+      localLineButton.classList.add('logged');
+      localLineButton.textContent='✓ LINE 已登入（測試）';
+      localBookingForm.querySelectorAll('label').forEach(node=>node.remove());
+      localBookingForm.querySelectorAll('input[type="hidden"][name="name"],input[type="hidden"][name="birthday_mmdd"]').forEach(node=>node.remove());
+      const nameInput=document.createElement('input');nameInput.type='hidden';nameInput.name='name';nameInput.value='謝守';localBookingForm.prepend(nameInput);
+      const birthdayInput=document.createElement('input');birthdayInput.type='hidden';birthdayInput.name='birthday_mmdd';birthdayInput.value='01/01';localBookingForm.prepend(birthdayInput);
+      toast('本機測試：已帶入 LINE 姓名');
+    });
+  }
+}
+</script>
+<script>
+// 學生前台：日曆顯示自己的預約，點自己的日期可直接修改或取消。
+(()=>{
+  const own=()=>{const id=window.FLOWLOG_LINE_USER_ID,name=window.FLOWLOG_LINE_NAME,testLogged=window.FLOWLOG_TEST_LOGGED||localStorage.getItem('flowlog-test-line-logged')==='1',testNames=testLogged?new Set([name,'謝守','測試 LINE 客人']):new Set();return bookings.filter(row=>id?row.user_id===id||(testLogged&&testNames.has(row.name)):(testLogged&&testNames.has(row.name)))};
+  const rowDate=row=>row.booking_date||row.date||dayKey(dateAt(row.offset||0));
+  const rowTime=row=>row.booking_time||row.time||'';
+  const manage=document.createElement('div');manage.className='modal-back';manage.innerHTML='<div class="modal"><h2 id="frontManageTitle">我的預約</h2><div id="frontManageList"></div><div class="actions"><button class="secondary" type="button" id="frontManageClose">返回</button></div></div>';document.body.append(manage);
+  const close=()=>manage.classList.remove('open');document.getElementById('frontManageClose').onclick=close;
+  const openManage=key=>{const rows=own().filter(row=>rowDate(row)===key);if(!rows.length)return false;document.getElementById('frontManageTitle').textContent=`${key} 我的預約`;document.getElementById('frontManageList').innerHTML=rows.map((row,index)=>`<div class="front-manage-row"><strong>${rowTime(row)}</strong><label>改日期<input type="date" data-front-date="${index}" value="${rowDate(row)}"></label><label>改時段<select data-front-time="${index}">${times.map(t=>`<option value="${t}" ${t===rowTime(row)?'selected':''}>${t}</option>`).join('')}</select></label><button class="cancel" type="button" data-front-cancel="${index}">取消預約</button><button class="primary" type="button" data-front-save="${index}">儲存變更</button></div>`).join('');
+    const saveRow=async index=>{const row=rows[index],dateInput=document.querySelector(`[data-front-date="${index}"]`),timeInput=document.querySelector(`[data-front-time="${index}"]`),nextDate=dateInput.value,nextTime=timeInput.value;if(own().some(other=>other!==row&&rowDate(other)===nextDate&&rowTime(other)===nextTime)){toast('這個時段已被預約');return}const base=(window.FLOWLOG_SUPABASE_URL||'').replace(/\/rest\/v1\/?$/,''),key=window.FLOWLOG_SUPABASE_KEY||'',token=localStorage.getItem('flowlog-line-access-token')||'';if(base&&key&&token.startsWith('ey')&&row.id){const response=await fetch(base+'/rest/v1/bookings?id=eq.'+encodeURIComponent(row.id),{method:'PATCH',headers:{apikey:key,Authorization:'Bearer '+token,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({booking_date:nextDate,booking_time:nextTime})});if(!response.ok){toast('修改失敗，請稍後再試');return}}if(row.booking_date)row.booking_date=nextDate;else row.date=nextDate;if(row.booking_time)row.booking_time=nextTime;else row.time=nextTime;row.offset=Math.round((new Date(nextDate+'T00:00:00')-today)/86400000);save();close();render();toast('預約已更新')};
+    document.querySelectorAll('[data-front-save]').forEach(button=>button.onclick=()=>saveRow(+button.dataset.frontSave));
+    document.querySelectorAll('[data-front-cancel]').forEach(button=>button.onclick=async()=>{if(!confirm('確定要取消這筆預約嗎？'))return;const row=rows[+button.dataset.frontCancel],base=(window.FLOWLOG_SUPABASE_URL||'').replace(/\/rest\/v1\/?$/,''),key=window.FLOWLOG_SUPABASE_KEY||'',token=localStorage.getItem('flowlog-line-access-token')||'';if(base&&key&&token.startsWith('ey')&&row.id){const response=await fetch(base+'/rest/v1/bookings?id=eq.'+encodeURIComponent(row.id),{method:'DELETE',headers:{apikey:key,Authorization:'Bearer '+token}});if(!response.ok){toast('取消失敗，請稍後再試');return}}bookings=bookings.filter(item=>item!==row);save();close();render();toast('預約已取消')});manage.classList.add('open');return true};
+  const originalCalendar=renderCalendar;renderCalendar=()=>{originalCalendar();const byDate=new Map();own().forEach(row=>{const key=rowDate(row);if(!byDate.has(key))byDate.set(key,[]);byDate.get(key).push(row)});document.querySelectorAll('#calendar .date:not(.blank)').forEach(cell=>{const day=cell.querySelector('b')?.textContent;if(!day)return;const key=dayKey(new Date(monthCursor.getFullYear(),monthCursor.getMonth(),+day)),rows=byDate.get(key)||[];cell.querySelector('small')?.remove();if(rows.length){cell.classList.add('has-own-booking');cell.insertAdjacentHTML('beforeend',rows.map(row=>`<small class="own-booking">${rowTime(row)}<br>${row.name||'我的預約'}</small>`).join(''));cell.onclick=()=>openManage(key)}})};
+  const originalRender=render;render=()=>{originalRender();renderCalendar()};render();
+})();
+</script>
+<style>.date.has-own-booking{border-color:#111;background:#fafafa}.own-booking{display:block!important;margin-top:3px;font-size:9px!important;line-height:1.25;color:#111!important;background:#f1f1f1!important;border-radius:5px;padding:3px 2px}.front-calendar-tip{margin:0 0 10px;color:#707070;font-size:12px}.front-manage-row{display:grid;grid-template-columns:auto 1fr 1fr auto auto;align-items:end;gap:8px;border-top:1px solid #ddd;padding:12px 0}.front-manage-row label{font-size:11px;color:#707070}.front-manage-row input,.front-manage-row select{display:block;width:100%;margin-top:5px;padding:8px;border:1px solid #ccc;border-radius:7px;background:#fff}.front-manage-row .cancel{padding:8px;border:0;background:none;color:#555;white-space:nowrap}.front-manage-row .primary{padding:8px;white-space:nowrap}@media(max-width:760px){.front-manage-row{grid-template-columns:1fr 1fr}.front-manage-row strong{grid-column:1/-1}.front-manage-row .cancel,.front-manage-row .primary{width:100%}}</style>
+<script>
+// 直接點日期選時段；移除日曆下方重複的選時段區塊。
+(()=>{
+  document.getElementById('slotTitle')?.closest('.panel-head')?.remove();
+  document.getElementById('slots')?.previousElementSibling?.remove();
+  const slotArea=document.getElementById('slots');
+  if(slotArea){slotArea.innerHTML='';slotArea.style.display='none'}
+  const chooser=document.createElement('div');chooser.className='modal-back';chooser.innerHTML='<div class="modal"><h2 id="quickDateTitle">選擇時段</h2><div class="quick-slots" id="quickSlots"></div><div class="actions"><button class="secondary" type="button" id="quickClose">返回</button></div></div>';document.body.append(chooser);
+  const close=()=>chooser.classList.remove('open');document.getElementById('quickClose').onclick=close;
+  const attach=()=>document.querySelectorAll('#calendar .date:not(.blank)').forEach(cell=>{if(cell.classList.contains('has-own-booking'))return;cell.onclick=()=>{const day=cell.querySelector('b')?.textContent;if(!day)return;const date=new Date(monthCursor.getFullYear(),monthCursor.getMonth(),+day),n=offset(date),available=times.filter(t=>!booked(n,t));selected=date;document.getElementById('quickDateTitle').textContent=`${fmt(date)} 選擇時段`;document.getElementById('quickSlots').innerHTML=available.length?available.map(t=>`<button type="button" class="slot"><b>${t}</b></button>`).join(''):'<div class="empty">這天目前沒有可預約時段</div>';document.querySelectorAll('#quickSlots .slot').forEach(button=>button.onclick=()=>{pending={offset:n,time:button.querySelector('b').textContent};document.getElementById('modalText').textContent=`${fmt(date)} ${pending.time}`;close();document.getElementById('modal').classList.add('open')});chooser.classList.add('open')}});
+  const oldRender=render;render=()=>{oldRender();attach()};attach();
+})();
+</script>
+<script>
+// 登入後重新渲染日曆時，仍維持空白日期的點擊功能。
+(()=>{
+  const refresh=()=>document.querySelectorAll('#calendar .date:not(.blank)').forEach(cell=>{
+    if(cell.classList.contains('has-own-booking'))return;
+    const day=cell.querySelector('b')?.textContent;
+    if(!day)return;
+    const n=offset(new Date(monthCursor.getFullYear(),monthCursor.getMonth(),+day));
+    if(n>=0&&n<=bookingWindow)cell.disabled=false;
+    cell.onclick=null;
+  });
+  document.addEventListener('click',event=>{
+    const cell=event.target.closest?.('#calendar .date:not(.blank)');
+    if(!cell||cell.classList.contains('has-own-booking')||cell.disabled)return;
+    event.preventDefault();
+    event.stopPropagation();
+    const day=cell.querySelector('b')?.textContent;
+    if(!day)return;
+    const date=new Date(monthCursor.getFullYear(),monthCursor.getMonth(),+day),n=offset(date);
+    selected=date;
+    const available=times.filter(t=>!booked(n,t));
+    document.getElementById('quickDateTitle').textContent=`${fmt(date)} 選擇時段`;
+    document.getElementById('quickSlots').innerHTML=available.length?available.map(t=>`<button type="button" class="slot"><b>${t}</b></button>`).join(''):'<div class="empty">這天目前沒有可預約時段</div>';
+    document.querySelectorAll('#quickSlots .slot').forEach(button=>button.onclick=()=>{
+      pending={offset:n,time:button.querySelector('b').textContent};
+      document.getElementById('modalText').textContent=`${fmt(date)} ${pending.time}`;
+      document.getElementById('quickDateTitle').closest('.modal-back').classList.remove('open');
+      document.getElementById('modal').classList.add('open');
+    });
+    document.getElementById('quickDateTitle').closest('.modal-back').classList.add('open');
+  },true);
+  const oldRenderForDates=render;
+  render=()=>{oldRenderForDates();refresh()};
+  refresh();
+})();
+</script>
+<style>
+/* 次要資訊統一使用提醒鈴鐺的深紅色。 */
+.own-booking,
+.booking-main small,
+.cancel { color:#641f1f !important; }
+#calendar .date.selected {
+  background:#fff !important;
+  border-color:#d5d5d5 !important;
+  color:#111 !important;
+}
+#calendar .date.selected b,
+#calendar .date.selected .day-note { color:#111 !important; }
+#calendar .date.selected .own-booking {
+  background:#fff !important;
+  color:#641f1f !important;
+}
+</style>
+<script>
+// 本機測試登入後立即重繪「我的預約」，避免日曆標記延遲或消失。
+if(location.protocol==='file:'){
+  const testKey='flowlog-test-line-logged';
+  if(localStorage.getItem(testKey)==='1'){
+    window.FLOWLOG_TEST_LOGGED=true;
+    window.FLOWLOG_LINE_NAME='謝守';
+    setTimeout(()=>render(),0);
+  }
+  document.addEventListener('click',event=>{
+    if(event.target.closest?.('#loginBtn')){
+      localStorage.setItem(testKey,'1');
+      setTimeout(()=>render(),0);
+    }
+  },true);
+}
+</script>
+<script>
+// 同日預約限制：學生需聯絡老師處理當天的預約。
+(()=>{
+  const notice='當天無法預約或修改，請聯絡老師。';
+  const sameDay=date=>date&&date.getFullYear()===today.getFullYear()&&date.getMonth()===today.getMonth()&&date.getDate()===today.getDate();
+  const warn=event=>{
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    document.querySelectorAll('.modal-back:not(#modal)').forEach(node=>node.classList.remove('open'));
+    toast(notice);
+  };
+  document.addEventListener('click',event=>{
+    const cell=event.target.closest?.('#calendar .date:not(.blank)');
+    if(cell){
+      const day=cell.querySelector('b')?.textContent;
+      if(day&&sameDay(new Date(monthCursor.getFullYear(),monthCursor.getMonth(),+day))){
+        warn(event);
+        return;
+      }
+    }
+    const action=event.target.closest?.('[data-front-save],[data-front-cancel],[data-summary-id],[data-api-cancel]');
+    if(action){
+      const row=action.closest('.front-manage-row');
+      const dateValue=row?.querySelector('input[type="date"]')?.value;
+      const booking=bookings.find(item=>String(item.id)===String(action.dataset.frontCancel||action.dataset.frontSave||action.dataset.summaryId||action.dataset.apiCancel));
+      const date= dateValue ? new Date(dateValue+'T00:00:00') : booking ? dateAt(booking.offset) : null;
+      if(sameDay(date))warn(event);
+    }
+  },true);
+  el('bookingForm')?.addEventListener('submit',event=>{
+    if(pending&&sameDay(dateAt(pending.offset)))warn(event);
+  },true);
+})();
+</script>
+<style>
+/* 學生前台不顯示「我的預約」區塊，但保留資料與管理功能。 */
+.student aside.panel,
+.student .booking-summary { display:none !important; }
+.student .grid { display:block; }
+</style>
+<script>
+// 更新前台提醒文字：至少提前一天修改。
+const reminder=document.querySelector('.student .hint');
+if(reminder){
+  const textNode=[...reminder.childNodes].find(node=>node.nodeType===Node.TEXT_NODE);
+  if(textNode)textNode.textContent='預約後如需取消或改期，請至少提前一天修改。';
+}
+</script>
+<style>
+/* 頁首提供快速 LINE 登入入口。 */
+#headerLineLogin { background:#06c755 !important; border-color:#06c755 !important; color:#fff !important; }
+.top #headerLineLogin { margin-left:auto; }
+#headerLineLogin { padding:7px 11px !important; font-size:13px !important; line-height:1.35; transform:translateY(-8px); }
+#modal #loginBtn { display:inline-block; width:auto; margin-left:0 !important; padding:6px 11px !important; font-size:13px !important; line-height:1.35; }
+</style>
+<script>
+// 頁首 LINE 登入按鈕與確認視窗共用同一個登入流程。
+(()=>{
+  const top=document.querySelector('.top'),mode=top?.querySelector('.mode');
+  if(!top||!mode||document.getElementById('headerLineLogin'))return;
+  const button=document.createElement('button');
+  button.id='headerLineLogin';
+  button.className='login';
+  button.type='button';
+  button.textContent=window.FLOWLOG_TEST_LOGGED?'✓ LINE 已登入':'使用 LINE 登入';
+  mode.before(button);
+  button.onclick=()=>{
+    if(location.protocol==='file:'){
+      window.FLOWLOG_TEST_LOGGED=true;
+      window.FLOWLOG_LINE_NAME='謝守';
+      localStorage.setItem('flowlog-test-line-logged','1');
+    }
+    document.getElementById('loginBtn')?.click();
+    setTimeout(()=>{
+      button.classList.toggle('logged',!!window.FLOWLOG_TEST_LOGGED);
+      button.textContent=window.FLOWLOG_TEST_LOGGED?'✓ LINE 已登入':'使用 LINE 登入';
+      render();
+    },0);
+  };
+})();
+</script>
