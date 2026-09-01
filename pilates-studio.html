@@ -107,24 +107,33 @@ window.FLOWLOG_SUPABASE_KEY='sb_publishable_hmGW4kELcllIw_7hqXzylA_8mHJZ7sm';
   let token=localStorage.getItem(tokenKey)||'',userId='',lineName='LINE 使用者';
   const readUserId=value=>{try{return JSON.parse(atob((value.split('.')[1]||'').replace(/-/g,'+').replace(/_/g,'/'))).sub||''}catch{return ''}};
   userId=readUserId(token);
+  // LINE 內建瀏覽器可能保留已失效或不完整的登入憑證。
+  // 不讓這種憑證污染公開時段查詢，並直接清除後重新登入。
+  if(token&&!userId){localStorage.removeItem(tokenKey);token=''}
   const loginBtn=el('loginBtn');
-  const headers=()=>({apikey:key,Authorization:'Bearer '+(token||key),'Content-Type':'application/json'});
+  const publicHeaders=()=>({apikey:key,Authorization:'Bearer '+key,'Content-Type':'application/json'});
+  const authHeaders=()=>({apikey:key,Authorization:'Bearer '+token,'Content-Type':'application/json'});
+  const clearSession=()=>{localStorage.removeItem(tokenKey);token='';userId='';window.FLOWLOG_LINE_USER_ID='';window.FLOWLOG_LINE_NAME=''};
+  const startLogin=()=>{location.href=base+'/auth/v1/authorize?provider=custom%3Aline&redirect_to='+encodeURIComponent(publicSite)};
   const setLogged=()=>{window.FLOWLOG_LINE_USER_ID=userId;window.FLOWLOG_LINE_NAME=lineName;if(loginBtn){loginBtn.textContent='✓ LINE 已登入';loginBtn.classList.add('logged')}};
-  const loadProfile=async()=>{if(!token)return;try{const r=await fetch(base+'/auth/v1/user',{headers:{apikey:key,Authorization:'Bearer '+token}});if(!r.ok)return;const u=await r.json(),m=u.user_metadata||{};lineName=m.full_name||m.display_name||m.name||u.email||lineName}catch{}};
+  const loadProfile=async()=>{if(!token)return false;try{const r=await fetch(base+'/auth/v1/user',{headers:authHeaders()});if(!r.ok){clearSession();return false}const u=await r.json(),m=u.user_metadata||{};lineName=m.full_name||m.display_name||m.name||u.email||lineName;return true}catch{clearSession();return false}};
   const params=new URLSearchParams(location.hash.replace(/^#/,'').replace(/^\?/,''));
-  if(params.get('access_token')){token=params.get('access_token');localStorage.setItem(tokenKey,token);userId=readUserId(token);history.replaceState(null,'',location.pathname+location.search);await loadProfile();setLogged();toast('LINE 登入成功')}
-  else if(token&&userId){await loadProfile();setLogged()}
-  else if(loginBtn)loginBtn.onclick=()=>{location.href=base+'/auth/v1/authorize?provider=custom%3Aline&redirect_to='+encodeURIComponent(publicSite)};
+  if(params.get('access_token')){token=params.get('access_token');localStorage.setItem(tokenKey,token);userId=readUserId(token);history.replaceState(null,'',location.pathname+location.search);if(await loadProfile()){setLogged();toast('LINE 登入成功')}else if(loginBtn)loginBtn.onclick=startLogin}
+  else if(token&&userId){if(await loadProfile())setLogged();else if(loginBtn)loginBtn.onclick=startLogin}
+  else if(loginBtn)loginBtn.onclick=startLogin;
   const toBooking=row=>({id:row.id,offset:Math.round((new Date(row.booking_date+'T00:00:00')-today)/86400000),time:row.booking_time,name:lineName||row.name,status:row.status});
   const load=async()=>{
-    const slots=await fetch(base+'/rest/v1/booking_slots?select=booking_date,booking_time',{headers:headers()});
+    // 可預約時段是公開資料，只使用 publishable key；不可使用可能過期的使用者 token。
+    const slots=await fetch(base+'/rest/v1/booking_slots?select=booking_date,booking_time',{headers:publicHeaders()});
     if(!slots.ok)throw new Error('時段讀取失敗 '+slots.status);
     seed={};(await slots.json()).forEach(row=>{(seed[row.booking_date]||=[]).push(row.booking_time)});
-    if(userId){const own=await fetch(api+'?select=*&user_id=eq.'+encodeURIComponent(userId)+'&order=booking_date.asc,booking_time.asc',{headers:headers()});if(!own.ok)throw new Error('我的預約讀取失敗 '+own.status);bookings=(await own.json()).filter(row=>new Date(row.booking_date+'T00:00:00')>=today).map(toBooking)}else bookings=[];
-    render();
+    if(userId&&token){const own=await fetch(api+'?select=*&user_id=eq.'+encodeURIComponent(userId)+'&order=booking_date.asc,booking_time.asc',{headers:authHeaders()});if(own.status===401){clearSession();throw new Error('登入已過期，請重新登入')}if(!own.ok)throw new Error('我的預約讀取失敗 '+own.status);bookings=(await own.json()).filter(row=>new Date(row.booking_date+'T00:00:00')>=today).map(toBooking)}else bookings=[];
+    // 前台已改為「直接點日曆」操作，舊的時段／我的預約區塊已移除。
+    // 只更新日曆，避免再呼叫已不存在的 slotTitle 等舊元素。
+    renderCalendar();
   };
-  el('bookingForm').onsubmit=async e=>{e.preventDefault();if(!userId){toast('請先使用 LINE 登入');return}const body={booking_date:dayKey(dateAt(pending.offset)),booking_time:pending.time,name:lineName,user_id:userId};try{const r=await fetch(api,{method:'POST',headers:{...headers(),Prefer:'return=representation'},body:JSON.stringify(body)});if(r.status===409)throw Error('這個時段剛剛已被預約');if(!r.ok)throw Error('預約失敗，請稍後再試');el('modal').classList.remove('open');e.target.reset();await load();toast('預約成功！已加入我的預約')}catch(err){toast(err.message)}};
-  try{await load()}catch(err){console.error('FlowLog booking service:',err);toast('目前無法連線到預約服務')}
+  el('bookingForm').onsubmit=async e=>{e.preventDefault();if(!userId||!token){toast('請先使用 LINE 登入');return}const body={booking_date:dayKey(dateAt(pending.offset)),booking_time:pending.time,name:lineName,user_id:userId};try{const r=await fetch(api,{method:'POST',headers:{...authHeaders(),Prefer:'return=representation'},body:JSON.stringify(body)});if(r.status===401){clearSession();throw Error('登入已過期，請重新登入')}if(r.status===409)throw Error('這個時段剛剛已被預約');if(!r.ok)throw Error('預約失敗（'+r.status+'）');el('modal').classList.remove('open');e.target.reset();await load();toast('預約成功！已加入我的預約')}catch(err){toast(err.message)}};
+  try{await load()}catch(err){console.error('FlowLog booking service:',err);toast('目前無法連線到預約服務（'+(err.message||'未知錯誤')+'）')}
 })();
 </script>
 <script src="confirmation-pages.js"></script>
