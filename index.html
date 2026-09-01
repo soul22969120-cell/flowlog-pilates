@@ -3,9 +3,12 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- 保留 LINE OAuth 回呼帶回的 query/hash，避免手機瀏覽器重新導向時遺失登入狀態。 -->
+    <meta name="flowlog-build" content="20260901-auth3">
+    <!-- 保留 LINE OAuth 回呼帶回的 query/hash，並用版本參數避開手機 WebView 舊快取。 -->
     <script>
-      location.replace('pilates-studio.html' + location.search + location.hash);
+      const params = new URLSearchParams(location.search);
+      params.set('v', '20260901-auth3');
+      location.replace('pilates-studio.html?' + params.toString() + location.hash);
     </script>
     <title>FlowLog｜皮拉提斯預約</title>
   </head>
