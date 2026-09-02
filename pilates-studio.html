@@ -98,6 +98,7 @@ if(location.protocol==='file:'){
 window.FLOWLOG_SUPABASE_URL='https://rvlaxuujzbuyoopseeqt.supabase.co';
 window.FLOWLOG_SUPABASE_KEY='sb_publishable_hmGW4kELcllIw_7hqXzylA_8mHJZ7sm';
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 (async()=>{
   if(location.protocol==='file:') return;
@@ -105,6 +106,7 @@ window.FLOWLOG_SUPABASE_KEY='sb_publishable_hmGW4kELcllIw_7hqXzylA_8mHJZ7sm';
   const key=window.FLOWLOG_SUPABASE_KEY;
   const publicSite='https://soul22969120-cell.github.io/flowlog-pilates/';
   const api=base+'/rest/v1/bookings',tokenKey='flowlog-line-access-token',refreshKey='flowlog-line-refresh-token';
+  const authClient=window.supabase?.createClient(base,key,{auth:{flowType:'pkce',autoRefreshToken:true,persistSession:true,detectSessionInUrl:false}});
   let token=localStorage.getItem(tokenKey)||'',refresh=localStorage.getItem(refreshKey)||'',userId='',lineName='LINE 使用者';
   const readUserId=value=>{try{const part=(value.split('.')[1]||'').replace(/-/g,'+').replace(/_/g,'/');return JSON.parse(atob(part+'='.repeat((4-part.length%4)%4))).sub||''}catch{return ''}};
   userId=readUserId(token);
@@ -118,9 +120,10 @@ window.FLOWLOG_SUPABASE_KEY='sb_publishable_hmGW4kELcllIw_7hqXzylA_8mHJZ7sm';
   const clearSession=()=>{localStorage.removeItem(tokenKey);localStorage.removeItem(refreshKey);token='';refresh='';userId='';window.FLOWLOG_LINE_USER_ID='';window.FLOWLOG_LINE_NAME='';window.FLOWLOG_LINE_ACCESS_TOKEN=''};
   // 不在前端自行做 PKCE。Supabase 的 custom OAuth provider 會在伺服器端處理
   // provider PKCE；瀏覽器使用 implicit callback，避免 LINE WebView 切換後遺失 verifier。
-  const startLogin=()=>{
-    const redirect=publicSite;
-    location.assign(base+'/auth/v1/authorize?provider=custom%3Aline&redirect_to='+encodeURIComponent(redirect));
+  const startLogin=async()=>{
+    if(!authClient){toast('登入服務尚未載入，請重新整理');return}
+    const {error}=await authClient.auth.signInWithOAuth({provider:'custom:line',options:{redirectTo:publicSite}});
+    if(error){console.error('FlowLog LINE login start error:',error);toast('LINE 登入無法開始，請再試一次')}
   };
   window.flowlogStartLineLogin=startLogin;
   const setLogged=()=>{
@@ -148,10 +151,20 @@ window.FLOWLOG_SUPABASE_KEY='sb_publishable_hmGW4kELcllIw_7hqXzylA_8mHJZ7sm';
     userId=readUserId(token);
     history.replaceState(null,'',location.pathname);
   }else if(params.get('code')){
-    // 舊版 PKCE callback 已無法在不同 WebView 間可靠交換，清掉後重新登入一次。
-    history.replaceState(null,'',location.pathname);
-    clearSession();
-    toast('登入流程已更新，請再按一次 LINE 登入');
+    if(!authClient){console.error('FlowLog OAuth error: Supabase client unavailable');history.replaceState(null,'',location.pathname);clearSession();toast('登入服務尚未載入，請重新整理')}
+    else {
+      const {data,error}=await authClient.auth.exchangeCodeForSession(params.get('code'));
+      if(error||!data?.session){console.error('FlowLog OAuth code exchange error:',error);history.replaceState(null,'',location.pathname);clearSession();toast('LINE 登入未完成，請再試一次')}
+      else {
+        token=data.session.access_token||'';
+        refresh=data.session.refresh_token||'';
+        userId=data.session.user?.id||readUserId(token);
+        localStorage.setItem(tokenKey,token);
+        if(refresh)localStorage.setItem(refreshKey,refresh);
+        await loadProfile();
+        history.replaceState(null,'',location.pathname);
+      }
+    }
   }
   if(token){
     if(await loadProfile()||await renew())setLogged();
