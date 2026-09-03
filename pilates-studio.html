@@ -122,7 +122,7 @@ window.FLOWLOG_SUPABASE_KEY='sb_publishable_hmGW4kELcllIw_7hqXzylA_8mHJZ7sm';
   // provider PKCE；瀏覽器使用 implicit callback，避免 LINE WebView 切換後遺失 verifier。
   const startLogin=async()=>{
     if(!authClient){toast('登入服務尚未載入，請重新整理');return}
-    const {error}=await authClient.auth.signInWithOAuth({provider:'custom:line',options:{redirectTo:publicSite}});
+    const {error}=await authClient.auth.signInWithOAuth({provider:'custom:line-oauth',options:{redirectTo:publicSite}});
     if(error){console.error('FlowLog LINE login start error:',error);toast('LINE 登入無法開始，請再試一次')}
   };
   window.flowlogStartLineLogin=startLogin;
