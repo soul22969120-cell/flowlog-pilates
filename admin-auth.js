@@ -39,6 +39,11 @@
     if(data.session.refresh_token)localStorage.setItem(refreshKey,data.session.refresh_token);
     history.replaceState(null,'',location.pathname);
   }
+  if(params.get('access_token')){
+    localStorage.setItem(tokenKey,params.get('access_token'));
+    if(params.get('refresh_token'))localStorage.setItem(refreshKey,params.get('refresh_token'));
+    history.replaceState(null,'',location.pathname);
+  }
   const token=localStorage.getItem(tokenKey);
   if(!token){showGate('老師後台','請使用老師本人的 LINE 帳號登入。');return}
   (async()=>{
