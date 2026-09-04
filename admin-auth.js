@@ -1,9 +1,11 @@
-(()=>{
+;(async()=>{
   const base=(window.FLOWLOG_SUPABASE_URL||'').replace(/\/rest\/v1\/?$/,'');
   const key=window.FLOWLOG_SUPABASE_KEY||'';
   const configuredAdminId=window.FLOWLOG_ADMIN_USER_ID||'';
   const tokenKey='flowlog-line-access-token';
+  const refreshKey='flowlog-line-refresh-token';
   const isLocal=location.protocol==='file:'||location.hostname==='localhost'||location.hostname==='127.0.0.1';
+  const authClient=window.supabase?.createClient(base,key,{auth:{flowType:'pkce',autoRefreshToken:true,persistSession:true,detectSessionInUrl:false}});
 
   const addStyle=()=>{
     const style=document.createElement('style');
@@ -16,13 +18,27 @@
     if(!gate){gate=document.createElement('main');gate.id='adminAuthGate';gate.className='admin-auth-gate';document.body.prepend(gate)}
     gate.innerHTML=`<section class="admin-auth-card"><h1>${title}</h1><p>${message}</p>${canLogin?'<button class="admin-auth-button" id="adminLineLogin">使用 LINE 登入</button>':''}<a class="admin-auth-link" href="pilates-studio.html">回學生預約頁</a></section>`;
     const login=document.getElementById('adminLineLogin');
-    if(login)login.onclick=()=>{if(!base||!key){alert('尚未設定 Supabase 連線');return}location.href=base+'/auth/v1/authorize?provider=custom%3Aline-oauth&redirect_to='+encodeURIComponent(location.href)};
+    if(login)login.onclick=async()=>{
+      if(!authClient){alert('登入服務尚未載入，請重新整理');return}
+      const {error}=await authClient.auth.signInWithOAuth({provider:'custom:line-oauth',options:{redirectTo:location.origin+location.pathname}});
+      if(error)alert('LINE 登入無法開始，請再試一次');
+    };
   };
   const allow=()=>{document.getElementById('adminAuthGate')?.remove();document.body.classList.add('admin-authorized')};
 
   addStyle();
   if(isLocal){allow();return}
   if(!configuredAdminId){showGate('老師後台尚未啟用','需要先設定老師的 LINE 帳號，才能查看學生資料。',false);return}
+  const params=new URLSearchParams(location.hash.replace(/^#/,'').replace(/^\?/,''));
+  new URLSearchParams(location.search).forEach((value,name)=>{if(!params.has(name))params.set(name,value)});
+  if(params.get('code')){
+    if(!authClient){showGate('登入服務尚未載入','請重新整理後再使用 LINE 登入。');return}
+    const {data,error}=await authClient.auth.exchangeCodeForSession(params.get('code'));
+    if(error||!data?.session){history.replaceState(null,'',location.pathname);showGate('LINE 登入未完成','請再試一次。');return}
+    localStorage.setItem(tokenKey,data.session.access_token||'');
+    if(data.session.refresh_token)localStorage.setItem(refreshKey,data.session.refresh_token);
+    history.replaceState(null,'',location.pathname);
+  }
   const token=localStorage.getItem(tokenKey);
   if(!token){showGate('老師後台','請使用老師本人的 LINE 帳號登入。');return}
   (async()=>{
